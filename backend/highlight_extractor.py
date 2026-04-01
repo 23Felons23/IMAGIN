@@ -143,7 +143,8 @@ def score_audio_energy(audio_path: str, chunk_start: float, chunk_end: float) ->
 
 MULTIMODAL_SYSTEM_PROMPT = """You are an expert podcast video editor.
 
-Given a transcript segment with timestamps, identify the single most engaging and compelling CONTIGUOUS moment.
+Given a transcript segment with timestamps, identify the single most engaging and compelling CONTIGUOUS moment. 
+The transcript may be in English or French; analyze it in its original language.
 
 Rules:
 - The moment must be fully contained within the provided transcript (do not invent timestamps outside it)
@@ -244,6 +245,7 @@ def extract_highlights_multimodal(
 TOPIC_SYSTEM_PROMPT = """You are an expert podcast video editor.
 
 Given a transcript segment with timestamps and a target topic, find the most relevant CONTIGUOUS moment that discusses that topic.
+The transcript and topic may be in English or French; analyze them accordingly.
 
 Rules:
 - The moment must be fully contained within the provided transcript

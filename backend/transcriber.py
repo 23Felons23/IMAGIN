@@ -40,8 +40,8 @@ def transcribe_and_diarize(audio_path: str, hf_token: str = "") -> list[dict]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     compute_type = "float16" if device == "cuda" else "int8"
 
-    # Step 1: Load WhisperX model and transcribe
-    model = whisperx.load_model("base", device=device, compute_type=compute_type)
+    # Step 1: Load WhisperX model and transcribe (Using 'medium' for better French accuracy)
+    model = whisperx.load_model("medium", device=device, compute_type=compute_type)
     audio = whisperx.load_audio(audio_path)
     result = model.transcribe(audio, batch_size=16)
 
