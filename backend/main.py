@@ -27,16 +27,18 @@ jobs: dict = {}
 
 
 def run_full_pipeline(job_id: str):
-    """Full processing pipeline: audio sync → transcription → diarization."""
+    """Full processing pipeline: audio sync → transcription → diarization → highlight extraction."""
     try:
         job_dir = TMP_DIR / job_id
         video_path = str(job_dir / "camera1.mp4")
         master_wav = str(job_dir / "master.wav")
+        mode = jobs[job_id].get("mode", "multimodal")
+        topic = jobs[job_id].get("topic", "")
 
         jobs[job_id]["status"] = "extracting_audio"
 
         # Phase 2: Audio extraction
-        from audio_sync import extract_audio, find_audio_offset
+        from audio_sync import extract_audio
         extract_audio(video_path, master_wav)
 
         jobs[job_id]["status"] = "transcribing"
@@ -51,8 +53,34 @@ def run_full_pipeline(job_id: str):
         with open(transcript_path, "w") as f:
             json.dump(transcript, f, indent=2)
 
-        jobs[job_id]["status"] = "complete"
+        jobs[job_id]["status"] = "extracting_highlights"
+
+        # Phase 3: AI Highlight Extraction
+        from highlight_extractor import extract_highlights_multimodal, extract_highlights_topic
+        from highlight_serializer import save_highlights_json, save_highlights_markdown
+
+        if mode == "topic" and topic:
+            highlights = extract_highlights_topic(
+                transcript_path=str(transcript_path),
+                topic_prompt=topic,
+            )
+        else:
+            highlights = extract_highlights_multimodal(
+                transcript_path=str(transcript_path),
+                audio_path=master_wav,
+            )
+
+        highlights_json_path = str(job_dir / "highlights.json")
+        highlights_md_path = str(job_dir / "highlights.md")
+
+        save_highlights_json(highlights, highlights_json_path)
+        save_highlights_markdown(highlights, highlights_md_path, mode=mode, topic_prompt=topic or None)
+
+        jobs[job_id]["status"] = "highlights_ready"
         jobs[job_id]["transcript_path"] = str(transcript_path)
+        jobs[job_id]["highlights_path"] = highlights_json_path
+        jobs[job_id]["highlights_md_path"] = highlights_md_path
+        jobs[job_id]["clip_count"] = len(highlights)
 
     except Exception as e:
         jobs[job_id]["status"] = "error"
@@ -60,7 +88,12 @@ def run_full_pipeline(job_id: str):
 
 
 @app.post("/api/upload")
-async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    mode: str = "multimodal",
+    topic: str = "",
+):
     job_id = str(uuid.uuid4())
     job_dir = TMP_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -71,9 +104,14 @@ async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = Fil
         while chunk := await file.read(1024 * 1024):
             out.write(chunk)
 
-    jobs[job_id] = {"status": "processing", "filename": file.filename}
+    jobs[job_id] = {
+        "status": "processing",
+        "filename": file.filename,
+        "mode": mode,
+        "topic": topic,
+    }
     background_tasks.add_task(run_full_pipeline, job_id)
-    return {"job_id": job_id, "status": "processing"}
+    return {"job_id": job_id, "status": "processing", "mode": mode}
 
 
 @app.get("/api/jobs/{job_id}")
