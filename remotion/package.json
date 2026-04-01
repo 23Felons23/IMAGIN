@@ -1,0 +1,25 @@
+{
+  "name": "podcast-pipeline-remotion",
+  "version": "1.0.0",
+  "description": "Remotion rendering layer for Podcast Pipeline",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "remotion studio",
+    "build": "remotion render src/index.ts PodcastClip out/clip.mp4",
+    "render": "remotion render src/index.ts PodcastClip"
+  },
+  "dependencies": {
+    "@remotion/player": "^4.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.3.0"
+  },
+  "remotion": {
+    "entryPoint": "src/index.ts"
+  }
+}

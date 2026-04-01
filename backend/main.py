@@ -82,6 +82,24 @@ def run_full_pipeline(job_id: str):
         jobs[job_id]["highlights_md_path"] = highlights_md_path
         jobs[job_id]["clip_count"] = len(highlights)
 
+        jobs[job_id]["status"] = "rendering"
+
+        # Phase 4: Remotion Video Rendering
+        from render_bridge import render_all_clips
+        remotion_root = str(Path(__file__).parent.parent / "remotion")
+        camera_config_path = str(job_dir / "camera_config.json")
+
+        output_clips = render_all_clips(
+            job_id=job_id,
+            tmp_dir=str(TMP_DIR),
+            camera_config_path=camera_config_path if (job_dir / "camera_config.json").exists() else None,
+            remotion_root=remotion_root,
+        )
+
+        jobs[job_id]["status"] = "complete"
+        jobs[job_id]["clips"] = output_clips
+        jobs[job_id]["clip_count"] = len(output_clips)
+
     except Exception as e:
         jobs[job_id]["status"] = "error"
         jobs[job_id]["error"] = str(e)
@@ -129,3 +147,34 @@ async def cleanup_job(job_id: str):
         shutil.rmtree(job_dir)
     jobs.pop(job_id, None)
     return {"cleaned": True}
+
+
+@app.post("/api/jobs/{job_id}/camera-config")
+async def upload_camera_config(job_id: str, file: UploadFile = File(...)):
+    """
+    Upload a camera_config.json to map speaker labels to video files.
+
+    Example JSON:
+        {"SPEAKER_00": "camera1.mp4", "SPEAKER_01": "camera2.mp4"}
+
+    Must be uploaded before the job reaches 'rendering' status.
+    """
+    job_dir = TMP_DIR / job_id
+    if not job_dir.exists():
+        return {"error": "Job not found"}
+    dest = job_dir / "camera_config.json"
+    content = await file.read()
+    with open(dest, "wb") as f:
+        f.write(content)
+    return {"uploaded": True, "job_id": job_id}
+
+
+@app.get("/api/jobs/{job_id}/clips")
+async def get_job_clips(job_id: str):
+    """List the rendered clip paths for a completed job."""
+    job = jobs.get(job_id)
+    if not job:
+        return {"error": "Job not found"}
+    if job.get("status") != "complete":
+        return {"status": job.get("status"), "clips": []}
+    return {"job_id": job_id, "clips": job.get("clips", []), "clip_count": job.get("clip_count", 0)}
