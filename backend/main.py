@@ -2,7 +2,11 @@ import os
 import uuid
 import shutil
 from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, BackgroundTasks
+
+# Load .env from the backend directory
+load_dotenv(Path(__file__).parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Podcast Pipeline API")

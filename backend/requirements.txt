@@ -5,3 +5,4 @@ aiofiles
 scipy
 numpy
 whisperx
+python-dotenv

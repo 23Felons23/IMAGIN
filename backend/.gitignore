@@ -1,0 +1,11 @@
+# Dependencies
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Environment — never commit secrets
+.env
+
+# Processing temp files
+.tmp_processing/
