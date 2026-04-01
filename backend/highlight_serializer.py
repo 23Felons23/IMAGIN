@@ -31,7 +31,7 @@ def save_highlights_json(
         output_path: Destination file path (e.g. .tmp_processing/{job_id}/highlights.json)
     """
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(highlights, f, indent=2)
 
 
@@ -88,5 +88,5 @@ def save_highlights_markdown(
             "",
         ]
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))

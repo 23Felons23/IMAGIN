@@ -155,8 +155,11 @@ Rules:
 Score rubric:
   0.9–1.0: Extraordinary insight, emotional peak, or viral-worthy moment
   0.7–0.8: Very engaging, clear value, good pacing
-  0.5–0.6: Interesting but not exceptional
-  Below 0.5: Skip this segment"""
+  0.4–0.6: Interesting but not exceptional
+  Below 0.4: Will do, keep the segment
+
+CRITICAL: You MUST use the ABSOLUTE timestamps provided in the transcript (e.g., 305.2), NOT relative offsets from the start of the window. Use the exact floating point numbers if possible, or infer them from the [HH:MM:SS] tags. Output ONLY the JSON.
+"""
 
 
 def score_chunk_with_llm(chunk: dict, llm_complete) -> dict | None:
@@ -173,19 +176,31 @@ def score_chunk_with_llm(chunk: dict, llm_complete) -> dict | None:
     )
 
     raw = llm_complete(MULTIMODAL_SYSTEM_PROMPT, user_prompt)
+    print(f"      🤖 LLM RAW OUTPUT:\n{raw}\n")
     result = _parse_llm_json(raw)
     if not result:
         return None
 
-    # Validate timestamps are within chunk bounds
-    start = result.get("start", 0)
-    end = result.get("end", 0)
-    if start < chunk["chunk_start"] or end > chunk["chunk_end"] or start >= end:
+    # Validate and CLAMP timestamps within chunk bounds
+    start = float(result.get("start", 0))
+    end = float(result.get("end", 0))
+
+    if start >= end:
+        print(f"      ❌ Rejected: start ({start}) >= end ({end})")
+        return None
+
+    # Clamping: if LLM is slightly off, we adjust to bounds instead of failing
+    clamped_start = max(start, chunk["chunk_start"])
+    clamped_end = min(end, chunk["chunk_end"])
+
+    if clamped_end - clamped_start < 2.0:
+        print(f"      ❌ Rejected: duration too short after clamping ({clamped_end - clamped_start:.1f}s)")
+        print(f"         (Original: {start} -> {end} | Window: {chunk['chunk_start']} -> {chunk['chunk_end']})")
         return None
 
     return {
-        "start": float(start),
-        "end": float(end),
+        "start": clamped_start,
+        "end": clamped_end,
         "score": float(result.get("score", 0)),
         "reason": str(result.get("reason", "")),
     }
@@ -219,13 +234,20 @@ def extract_highlights_multimodal(
         words = json.load(f)
 
     candidates = []
-    for chunk in chunk_transcript(words, window_seconds=window_secs):
+    chunks = list(chunk_transcript(words, window_seconds=window_secs))
+    total_chunks = len(chunks)
+    
+    print(f"  🔍 Analyzing {total_chunks} windows for highlights...")
+    
+    for i, chunk in enumerate(chunks, start=1):
+        print(f"    - Window {i}/{total_chunks} [{_fmt_seconds(chunk['chunk_start'])} → {_fmt_seconds(chunk['chunk_end'])}]")
         audio_energy = score_audio_energy(audio_path, chunk["chunk_start"], chunk["chunk_end"])
         llm_result = score_chunk_with_llm(chunk, llm_complete)
         if not llm_result:
             continue
 
         combined_score = 0.4 * audio_energy + 0.6 * llm_result["score"]
+        print(f"      ✅ Score: {combined_score:.4f} | Reason: {llm_result['reason'][:60]}...")
         candidates.append({
             "start": llm_result["start"],
             "end": llm_result["end"],
@@ -256,8 +278,11 @@ Rules:
 Score rubric:
   0.9–1.0: Topic is the primary focus, discussed with depth
   0.7–0.8: Topic clearly discussed, good content
-  0.5–0.6: Topic mentioned but not deeply explored
-  0.0: Topic not present in this segment"""
+  0.4–0.6: Topic mentioned but not deeply explored
+  0.0: Topic not present in this segment
+
+CRITICAL: You MUST use the ABSOLUTE timestamps provided in the transcript (e.g., 305.2), NOT relative offsets from the start of the window. Output ONLY the JSON.
+"""
 
 
 def extract_highlights_topic(

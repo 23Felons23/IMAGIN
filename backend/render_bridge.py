@@ -87,7 +87,7 @@ def render_clip(
     out_path.mkdir(parents=True, exist_ok=True)
 
     config_path = out_path / f"render_config_{clip_index:02d}.json"
-    with open(config_path, "w") as f:
+    with open(config_path, "w", encoding="utf-8") as f:
         json.dump(render_config, f, indent=2)
 
     output_mp4 = out_path / f"clip_{clip_index:02d}.mp4"
@@ -95,21 +95,26 @@ def render_clip(
 
     cmd = [
         "npx", "remotion", "render",
-        "src/index.ts",
         "PodcastClip",
-        str(output_mp4),
-        f"--props={config_path}",
+        str(output_mp4.absolute()),
+        f"--entry-point=src/index.tsx",
+        f"--props={config_path.absolute()}",
         f"--frames=0-{duration_frames}",
         "--codec=h264",
         "--pixel-format=yuv420p",
         "--log=error",
     ]
 
+    # Windows requires shell=True to find 'npx' command (npx.cmd)
+    import platform
+    is_windows = platform.system() == "Windows"
+
     result = subprocess.run(
         cmd,
         cwd=remotion_root,
         capture_output=True,
         text=True,
+        shell=is_windows,
         timeout=600,  # 10 minute max per clip
     )
 
@@ -148,12 +153,12 @@ def render_all_clips(
     clips_dir = job_dir / "clips"
 
     # Load pipeline outputs
-    highlights = json.loads((job_dir / "highlights.json").read_text())
-    transcript_words = json.loads((job_dir / "transcript.json").read_text())
+    highlights = json.loads((job_dir / "highlights.json").read_text(encoding="utf-8"))
+    transcript_words = json.loads((job_dir / "transcript.json").read_text(encoding="utf-8"))
 
     # Build video_files map from camera config
     if camera_config_path and Path(camera_config_path).exists():
-        raw_config = json.loads(Path(camera_config_path).read_text())
+        raw_config = json.loads(Path(camera_config_path).read_text(encoding="utf-8"))
         # Resolve relative filenames to absolute paths within job directory
         video_files = {
             speaker: str(job_dir / filename)
@@ -164,7 +169,11 @@ def render_all_clips(
         video_files = {"DEFAULT": str(job_dir / "camera1.mp4")}
 
     output_paths = []
+    total_clips = len(highlights)
+    print(f"  🎬 Rendering {total_clips} clips...")
+
     for i, highlight in enumerate(highlights, start=1):
+        print(f"    - Rendering clip {i}/{total_clips} ({highlight['end'] - highlight['start']:.1f}s)...")
         config = build_render_config(
             highlight=highlight,
             transcript_words=list(transcript_words),  # copy to avoid mutation
@@ -176,6 +185,7 @@ def render_all_clips(
             output_dir=str(clips_dir),
             remotion_root=remotion_root,
         )
+        print(f"      ✅ Saved to {Path(output_mp4).name}")
         output_paths.append(output_mp4)
 
     return output_paths

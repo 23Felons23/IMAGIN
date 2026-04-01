@@ -25,8 +25,13 @@ def extract_audio(video_path: str, output_wav_path: str) -> None:
     Raises:
         RuntimeError: If FFmpeg fails to extract audio
     """
+    import os
+    ffmpeg_exe = os.environ.get("FFMPEG_PATH", "ffmpeg")
+    print(f"      DEBUG: Attempting audio extraction with: {ffmpeg_exe}")
+    print(f"      DEBUG: Target file exists? {os.path.exists(ffmpeg_exe)}")
+
     cmd = [
-        "ffmpeg",
+        ffmpeg_exe,
         "-y",                   # Overwrite output without prompting
         "-i", video_path,
         "-ac", "1",             # Mono channel (required for stable cross-corr)

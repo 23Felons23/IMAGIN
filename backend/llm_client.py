@@ -44,7 +44,7 @@ def get_llm_client() -> Callable[[str, str], str]:
 
         def complete(system_prompt: str, user_prompt: str) -> str:
             msg = client.messages.create(
-                model="claude-haiku-20240307",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=1024,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],

@@ -13,9 +13,14 @@
 **/build/
 
 # Project Specific
+backend/venv/
 backend/.tmp_processing/
+remotion/.tmp_processing/
 remotion/out/
 remotion/dist/
+*.pt
+*.bin
+*.onnx
 
 # Logs
 *.log
