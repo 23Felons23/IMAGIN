@@ -1,5 +1,5 @@
 import React from 'react';
-import {AbsoluteFill, OffthreadVideo, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, OffthreadVideo, Series, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {RenderConfig, WordEntry} from './types';
 import {Subtitles} from './Subtitles';
 import {EmojiOverlay} from './EmojiOverlay';
@@ -46,25 +46,38 @@ export const PodcastClip: React.FC<PodcastClipProps> = ({renderConfig}) => {
     );
   }
 
-  const {words, videoFiles, clipStart} = renderConfig;
+  const {words, videoFiles, timeline} = renderConfig;
   const currentTimeSec = frame / fps;
-
-  const activeVideoPath = getActiveVideoFile(words, videoFiles, currentTimeSec);
 
   return (
     <AbsoluteFill style={{backgroundColor: '#000', width, height}}>
-      {/* Main video — fills frame, object-fit cover for vertical crop */}
+      {/* Main video — rendered as a Series of segments (jump cuts) */}
       <AbsoluteFill>
-        <OffthreadVideo
-          src={activeVideoPath}
-          startFrom={Math.round(clipStart * fps)}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: 'center center',
-          }}
-        />
+        <Series>
+          {timeline.map((segment, i) => {
+            const durationInFrames = Math.round(segment.durationSeconds * fps);
+            if (durationInFrames <= 0) return null;
+
+            // Determine which video file to show for this segment.
+            // We use the start of the segment to pick the speaker.
+            const activeVideoPath = getActiveVideoFile(words, videoFiles, segment.renderedStart + 0.01);
+
+            return (
+              <Series.Sequence key={i} durationInFrames={durationInFrames}>
+                <OffthreadVideo
+                  src={staticFile(activeVideoPath)}
+                  startFrom={Math.round(segment.sourceStart * fps)}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    objectPosition: 'center center',
+                  }}
+                />
+              </Series.Sequence>
+            );
+          })}
+        </Series>
       </AbsoluteFill>
 
       {/* Darkening vignette in lower third for subtitle readability */}

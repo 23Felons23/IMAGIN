@@ -19,46 +19,118 @@ def build_render_config(
     video_files: dict,
 ) -> dict:
     """
-    Build a renderConfig JSON object for a single highlight clip.
+    Build a renderConfig JSON object for a single highlight clip with Smart Silence Removal
+    and AI Content Pruning.
 
-    Word timestamps are normalized to be clip-relative (0 = clip start).
-    This means Remotion doesn't need to know the original video offset.
-
-    Args:
-        highlight: {start, end, score, reason, mode, ...} from highlights.json
-        transcript_words: Full [{word, start, end, speaker}] list
-        video_files: {speaker_label: "/abs/path/to/camera.mp4"}
-
-    Returns:
-        dict: renderConfig consumed directly by PodcastClip.tsx
+    This identifies gaps between words and semantic filler segments, shortening them
+    to create high-energy jump cuts.
     """
     clip_start = highlight["start"]
     clip_end = highlight["end"]
+    suggested_cuts = highlight.get("suggested_cuts", [])
 
-    # Extract words that overlap with this clip window
-    clip_words = [
-        w for w in transcript_words
-        if w["end"] >= clip_start and w["start"] <= clip_end
-    ]
+    # Configuration for Jump Cuts
+    SILENCE_THRESHOLD = 0.4  # Gaps > 0.4s are considered "excessive"
+    KEEP_SILENCE = 0.1       # Shorten long gaps/cuts to exactly 0.1s
 
-    # Normalize timestamps: shift so clip start = 0.0
-    normalized_words = []
-    for w in clip_words:
-        normalized_words.append({
+    # 1. Pre-process: Filter out words that fall within AI-suggested cuts
+    # (or words that overlap significantly)
+    filtered_words = []
+    for w in transcript_words:
+        if w["end"] < clip_start or w["start"] > clip_end:
+            continue
+            
+        is_filler = False
+        for cut in suggested_cuts:
+            # If word is inside a cut range, mark as filler
+            if w["start"] >= cut["start"] and w["end"] <= cut["end"]:
+                is_filler = True
+                break
+        
+        if not is_filler:
+            filtered_words.append(w)
+
+    if not filtered_words:
+        return {
+            "clipStart": clip_start,
+            "clipEnd": clip_end,
+            "durationSeconds": clip_end - clip_start,
+            "videoFiles": video_files,
+            "words": [],
+            "timeline": [],
+        }
+
+    # 2. Generate the compressed timeline
+    timeline = []
+    compressed_words = []
+    rendered_cursor = 0.0
+    current_segment_source_start = clip_start
+    
+    # We'll also treat the AI cuts as "virtual gaps" in the loop below
+    for i in range(len(filtered_words)):
+        w = filtered_words[i]
+        w_start_source = w["start"]
+        w_end_source = w["end"]
+        
+        # Calculate the gap before this word
+        if i == 0:
+            gap_duration = w_start_source - clip_start
+        else:
+            gap_duration = w_start_source - filtered_words[i-1]["end"]
+            
+        # If the gap is excessive (due to silence OR removed filler), perform jump cut
+        if gap_duration > SILENCE_THRESHOLD:
+            # Close previous segment
+            source_end = w_start_source - gap_duration + (KEEP_SILENCE / 2.0)
+            duration = source_end - current_segment_source_start
+            
+            if duration > 0:
+                timeline.append({
+                    "sourceStart": round(current_segment_source_start, 3),
+                    "sourceEnd": round(source_end, 3),
+                    "renderedStart": round(rendered_cursor, 3),
+                    "renderedEnd": round(rendered_cursor + duration, 3),
+                    "durationSeconds": round(duration, 3),
+                })
+                rendered_cursor += duration
+            
+            # Start new segment
+            current_segment_source_start = w_start_source - (KEEP_SILENCE / 2.0)
+            
+        # Add word with its new rendered timestamp
+        w_rendered_start = rendered_cursor + (w_start_source - current_segment_source_start)
+        w_rendered_end = rendered_cursor + (w_end_source - current_segment_source_start)
+        
+        compressed_words.append({
             **w,
-            "start": round(max(0.0, w["start"] - clip_start), 3),
-            "end": round(w["end"] - clip_start, 3),
+            "start": round(w_rendered_start, 3),
+            "end": round(w_rendered_end, 3),
         })
+
+    # Close the final segment
+    final_source_end = clip_end
+    final_duration = final_source_end - current_segment_source_start
+    if final_duration > 0:
+        timeline.append({
+            "sourceStart": round(current_segment_source_start, 3),
+            "sourceEnd": round(final_source_end, 3),
+            "renderedStart": round(rendered_cursor, 3),
+            "renderedEnd": round(rendered_cursor + final_duration, 3),
+            "durationSeconds": round(final_duration, 3),
+        })
+        rendered_cursor += final_duration
 
     return {
         "clipStart": clip_start,
         "clipEnd": clip_end,
-        "durationSeconds": round(clip_end - clip_start, 3),
+        "durationSeconds": round(rendered_cursor, 3),
         "videoFiles": video_files,
-        "words": normalized_words,
+        "words": compressed_words,
+        "timeline": timeline,
         "score": highlight.get("score", 0),
         "reason": highlight.get("reason", ""),
         "mode": highlight.get("mode", "multimodal"),
+        "suggested_cuts": suggested_cuts,
     }
 
 
@@ -88,7 +160,7 @@ def render_clip(
 
     config_path = out_path / f"render_config_{clip_index:02d}.json"
     with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(render_config, f, indent=2)
+        json.dump({"renderConfig": render_config}, f, indent=2)
 
     output_mp4 = out_path / f"clip_{clip_index:02d}.mp4"
     duration_frames = round(render_config["durationSeconds"] * 30)  # 30fps
@@ -99,7 +171,7 @@ def render_clip(
         str(output_mp4.absolute()),
         f"--entry-point=src/index.tsx",
         f"--props={config_path.absolute()}",
-        f"--frames=0-{duration_frames}",
+        f"--frames=0-{duration_frames - 1}",
         "--codec=h264",
         "--pixel-format=yuv420p",
         "--log=error",
@@ -157,16 +229,16 @@ def render_all_clips(
     transcript_words = json.loads((job_dir / "transcript.json").read_text(encoding="utf-8"))
 
     # Build video_files map from camera config
+    # Paths are stored relative to 'remotion/public/' for use with staticFile()
     if camera_config_path and Path(camera_config_path).exists():
         raw_config = json.loads(Path(camera_config_path).read_text(encoding="utf-8"))
-        # Resolve relative filenames to absolute paths within job directory
         video_files = {
-            speaker: str(job_dir / filename)
+            speaker: f"tmp/{job_id}/{filename}"
             for speaker, filename in raw_config.items()
         }
     else:
         # Fallback: all speakers → camera1.mp4
-        video_files = {"DEFAULT": str(job_dir / "camera1.mp4")}
+        video_files = {"DEFAULT": f"tmp/{job_id}/camera1.mp4"}
 
     output_paths = []
     total_clips = len(highlights)

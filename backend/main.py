@@ -91,7 +91,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-TMP_DIR = Path(".tmp_processing")
+TMP_DIR = Path("../remotion/public/tmp")
 TMP_DIR.mkdir(exist_ok=True)
 
 # In-memory job store (replace with DB in future)

@@ -28,7 +28,9 @@ You need three terminal windows:
 ```bash
 cd backend
 python -m uvicorn main:app --reload --port 8000
+.\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
 ```
+curl -X POST "http://localhost:8000/api/jobs/c7f7c857-062f-4823-9b5c-9995511faebe/rerun"
 
 #### Window 2: Frontend (UI)
 ```bash

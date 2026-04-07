@@ -22,8 +22,8 @@
 
 ### AI Highlight Extraction
 
-- [ ] **AI-01**: For multimodal mode, system identifies 30-60s highlights combining audio energy spikes and high-engagement transcript segments using LLM
-- [ ] **AI-02**: For topic-driven mode, system extracts contiguous 30-60s chunks matching the user's prompt using LLM
+- [ ] **AI-01**: For multimodal mode, system identifies 10-30s highlights combining audio energy spikes and high-engagement transcript segments using LLM
+- [ ] **AI-02**: For topic-driven mode, system extracts contiguous 10-30s chunks matching the user's prompt using LLM
 
 ### Dynamic Video Rendering
 
